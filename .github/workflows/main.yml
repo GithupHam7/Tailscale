@@ -1,4 +1,3 @@
-
 name: RDP
 on:
   workflow_dispatch:
@@ -30,15 +29,15 @@ jobs:
       - name: Configure Core RDP Settings
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 1 -Force
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
           netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User with Static Password
         run: |
-          $password = "admin@123"
+          $password = "MyStrong123"
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
 
           if (-not (Get-LocalUser -Name "HAM7Office" -ErrorAction SilentlyContinue)) {
@@ -46,6 +45,7 @@ jobs:
           }
           Add-LocalGroupMember -Group "Administrators" -Member "HAM7Office"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "HAM7Office"
+       
           echo "RDP_CREDS=User: HAM7Office | Password: $password" >> $env:GITHUB_ENV
           if (-not (Get-LocalUser -Name "HAM7Office")) {
               Write-Error "User creation failed"
@@ -62,7 +62,7 @@ jobs:
 
       - name: Establish Tailscale Connection
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=HAM7Office
           $tsIP = $null
           $retries = 0
           while (-not $tsIP -and $retries -lt 10) {
@@ -86,6 +86,29 @@ jobs:
           }
           Write-Host "TCP connectivity successful!"
 
+      - name: Download, Extract, and Fix Permissions
+        run: |
+          $DirectLink = "https://github.com/Wosol33/Tailscale/releases/download/LWR152/librewolf_RDP.rar"
+          $DesktopPath = "C:\Users\Public\Desktop"
+          $Destination = "$DesktopPath\librewolf_RDP.rar"
+          
+          Write-Host "Downloading librewolf_RDP.rar..."
+          Invoke-WebRequest -Uri $DirectLink -OutFile $Destination
+          Write-Host "تم التحميل! جاري فك الضغط..."
+          
+          tar -xf $Destination -C $DesktopPath
+          Remove-Item $Destination -Force
+          
+          Write-Host "جاري تعديل الصلاحيات وإلغاء القراءة فقط..."
+          
+          Get-ChildItem -Path "$DesktopPath" -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+              if ($_.IsReadOnly) { $_.IsReadOnly = $false }
+          }
+          
+          icacls "$DesktopPath\*" /grant "HAM7Office:(OI)(CI)F" /T /C /Q
+          
+          Write-Host "تم فك الضغط وتجهيز الصلاحيات بنجاح على سطح المكتب!"
+
       - name: Maintain Connection
         run: |
           $ownershipNotice = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("Cj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogQ29weXJpZ2h0IMKpIDIwMjUgVG9vbGJveExhcC54eXogfCBodHRwczovL3d3dy50b29sYm94bGFwLnh5ei8KIEFsbCByaWdodHMgcmVzZXJ2ZWQuIERvIG5vdCByZW1vdmUgb3IgbW9kaWZ5IGNvcHlyaWdodCB0ZXh0LgogWW91VHViZTogaHR0cHM6Ly93d3cueW91dHViZS5jb20vY2hhbm5lbC9VQ0RUNGZzOUp3cm5RSVhQclhYOHlIZVEKIEZhY2Vib29rOiBodHRwczovL3d3dy5mYWNlYm9vay5jb20vcHJvZmlsZS5waHA/aWQ9NjE1Njc4OTY2OTI5OTQKIEFueSBjaGFuZ2VzIHdpbGwgYXV0b21hdGljYWxseSBkaXNhYmxlIHRoaXMgc2NyaXB0IQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0K"))
@@ -93,9 +116,10 @@ jobs:
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: HAM7Office"
-          Write-Host "Password: admin@123"
+          Write-Host "Password: MyStrong123"
           Write-Host "Powered by https://www.toolboxlap.xyz/"
           Write-Host "========= All rights reserved =========`n"
+         
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
